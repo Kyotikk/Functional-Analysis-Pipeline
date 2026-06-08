@@ -1,0 +1,71 @@
+# R4 Capacity Rules - 1 Example Domain
+#
+# Stage direction : 5 = best capacity (no/minimal impairment)
+#                   1 = worst capacity (complete impairment)
+# Cumulative logic: higher stage implies lower-stage capabilities are also present.
+# Assignment      : descending scan (5 -> 2); first satisfied stage wins; Stage 1 is default.
+# Evidence source : activity interval files produced by HR-metric-extractor batch pipeline.
+#                   A stage is satisfied when ALL its checks pass.
+#
+# Check fields:
+#   source           - file-name prefix (see qualifier._SOURCE_FILE_MAP)
+#   keywords         - substring match against 'activity' column (case-insensitive, OR logic); [] = accept all
+#   exclude_keywords - substring exclusion applied after include filter
+#   min_occurrences  - number of rows that must survive all filters
+#   min_duration_sec - per-row minimum duration threshold (rows below this are ignored)
+#
+# not_assessable: true  ->  stage cannot be evaluated from controlled-protocol data;
+#                           the algorithm skips it and continues to the next lower stage.
+#                           The output flags `capped_by_not_assessable` when the final assigned
+#                           stage could actually be higher in a real-world assessment.
+
+domains:
+  # -----------------------------------------------------------------------------
+  basic_mobility:
+    r4_label: "Basic Movements"
+    stages:
+      5:
+        description: "Maintains standing position (>=3 min without assistance)"
+        note: >
+          Pure standing intervals distinguished from sit-to-stand transitions by
+          excluding rows whose activity label contains ' to '.
+          Protocol limitation: controlled sessions only test ~20s standing bouts;
+          threshold is lowered to 15s to reflect what the protocol can demonstrate
+          (true 3-min criterion requires longitudinal or free-living assessment).
+        checks:
+          - source: activity_standing
+            keywords: ["stand", "standing"]
+            exclude_keywords: [" to "]
+            min_occurrences: 1
+            min_duration_sec: 15.0   # protocol-adjusted (max observed ~26s)
+
+      4:
+        description: "Transfers from/to sitting position (incl. different seat heights)"
+        checks:
+          - source: activity_transfer
+            keywords: []
+            min_occurrences: 1
+            min_duration_sec: 5.0
+
+      3:
+        description: "Maintains edge sitting position without assistance"
+        note: >
+          Inferred from lying-to-sit transitions captured in the bed_transfer activity.
+          Absence of explicit edge-sitting protocol item is a known limitation.
+        checks:
+          - source: activity_bed_transfer
+            keywords: ["lying to sit", "sit to lying", "lying sit"]
+            min_occurrences: 1
+            min_duration_sec: 3.0
+
+      2:
+        description: "Changes lying position (turns/tosses in bed)"
+        checks:
+          - source: activity_bed_transfer
+            keywords: []    # any bed_transfer interval qualifies
+            min_occurrences: 1
+            min_duration_sec: 3.0
+
+      # Stage 1 is the implicit default - no evidence for Stage 2 or above.
+
+  # -----------------------------------------------------------------------------

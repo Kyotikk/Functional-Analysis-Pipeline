@@ -1,0 +1,196 @@
+# R4 Capacity Rules — 4 MVP Domains
+#
+# Stage direction : 5 = best capacity (no/minimal impairment)
+#                   1 = worst capacity (complete impairment)
+# Cumulative logic: higher stage implies lower-stage capabilities are also present.
+# Assignment      : descending scan (5 → 2); first satisfied stage wins; Stage 1 is default.
+# Evidence source : activity interval files produced by HR-metric-extractor batch pipeline.
+#                   A stage is satisfied when ALL its checks pass.
+#
+# Check fields:
+#   source           - file-name prefix (see qualifier._SOURCE_FILE_MAP)
+#   keywords         - substring match against 'activity' column (case-insensitive, OR logic); [] = accept all
+#   exclude_keywords - substring exclusion applied after include filter
+#   min_occurrences  - number of rows that must survive all filters
+#   min_duration_sec - per-row minimum duration threshold (rows below this are ignored)
+#
+# not_assessable: true  →  stage cannot be evaluated from controlled-protocol data;
+#                           the algorithm skips it and continues to the next lower stage.
+#                           The output flags `capped_by_not_assessable` when the final assigned
+#                           stage could actually be higher in a real-world assessment.
+
+domains:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  basic_mobility:
+    r4_label: "Basic Movements"
+    stages:
+      5:
+        description: "Maintains standing position (≥3 min without assistance)"
+        note: >
+          Pure standing intervals distinguished from sit-to-stand transitions by
+          excluding rows whose activity label contains ' to '.
+          Protocol limitation: controlled sessions only test ~20s standing bouts;
+          threshold is lowered to 15s to reflect what the protocol can demonstrate
+          (true 3-min criterion requires longitudinal or free-living assessment).
+        checks:
+          - source: activity_standing
+            keywords: ["stand", "standing"]
+            exclude_keywords: [" to "]
+            min_occurrences: 1
+            min_duration_sec: 15.0   # protocol-adjusted (max observed ~26s)
+
+      4:
+        description: "Transfers from/to sitting position (incl. different seat heights)"
+        checks:
+          - source: activity_transfer
+            keywords: []
+            min_occurrences: 1
+            min_duration_sec: 5.0
+
+      3:
+        description: "Maintains edge sitting position without assistance"
+        note: >
+          Inferred from lying-to-sit transitions captured in the bed_transfer activity.
+          Absence of explicit edge-sitting protocol item is a known limitation.
+        checks:
+          - source: activity_bed_transfer
+            keywords: ["lying to sit", "sit to lying", "lying sit"]
+            min_occurrences: 1
+            min_duration_sec: 3.0
+
+      2:
+        description: "Changes lying position (turns/tosses in bed)"
+        checks:
+          - source: activity_bed_transfer
+            keywords: []    # any bed_transfer interval qualifies
+            min_occurrences: 1
+            min_duration_sec: 3.0
+
+      # Stage 1 is the implicit default — no evidence for Stage 2 or above.
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  walking:
+    r4_label: "Walking"
+    stages:
+      5:
+        description: "Uses public and/or private transportation to go out"
+        not_assessable: true
+        note: "Not tested in controlled ADL protocol."
+        checks: []
+
+      4:
+        description: "Climbs more than 5 stairs"
+        not_assessable: true
+        note: "Stair climbing not extracted in standard HR-metric-extractor pipeline."
+        checks: []
+
+      3:
+        description: "Walks safely without assistance (cane / walking aid acceptable)"
+        note: >
+          'walker' keyword refers to a walking aid (Rollator), not wheelchair use;
+          subjects using a walker are correctly classified as Stage 3.
+          Data quality note: some protocol annotators labelled Rollator walking as
+          'self propulsion'. If such a subject has BOTH 'level walking' and
+          'self propulsion' intervals, Stage 3 is still correctly assigned by the
+          cumulative scan. If only 'self propulsion' is present for a known walker,
+          the annotation should be corrected upstream in the ADL protocol file.
+        checks:
+          - source: propulsion
+            keywords: ["level walking", "walking", "walker", "ambulation", "slope walking"]
+            exclude_keywords: ["self propulsion", "assisted propulsion"]
+            min_occurrences: 1
+            min_duration_sec: 30.0
+
+      2:
+        description: "Moves around within a building (incl. wheelchair)"
+        checks:
+          - source: propulsion
+            keywords: ["self propulsion", "assisted propulsion"]
+            min_occurrences: 1
+            min_duration_sec: 30.0
+
+      # Stage 1: cannot mobilize — no propulsion evidence at all.
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  oral_care:
+    r4_label: "Oral Care"
+    stages:
+      5:
+        description: "Takes care of dentures by oneself"
+        not_assessable: true
+        note: "Denture care not systematically tested in standard controlled protocol."
+        checks: []
+
+      4:
+        description: "Sets up toothbrush/toothpaste by oneself AND brushes teeth"
+        note: >
+          Presence of 'put_toothpaste' activity is used as a proxy for independent setup.
+          If setup was assisted, this activity would not appear in the subject's protocol data.
+          In current pipeline: activity_put_toothpaste.csv is a separate extracted activity.
+        checks:
+          - source: activity_put_toothpaste
+            keywords: []
+            min_occurrences: 1
+            min_duration_sec: 3.0
+
+      3:
+        description: "Brushes teeth by oneself (setup may be assisted)"
+        note: >
+          'clean teeth' is an older annotation variant used in early protocol versions.
+          Note: if a subject's activity_dental_care.csv is empty despite known brushing
+          activity, the HR-metric-extractor batch must be re-run with 'clean teeth'
+          added to the dental_care keyword list in the pipeline config.
+        checks:
+          - source: activity_dental_care
+            keywords: ["brush teeth", "clean teeth", "cleaning teeth", "brushing"]
+            min_occurrences: 1
+            min_duration_sec: 10.0
+
+      2:
+        description: "Rinses mouth by oneself only"
+        note: >
+          In current pipeline: activity_rinse_mouth.csv is a separate extracted activity.
+        checks:
+          - source: activity_rinse_mouth
+            keywords: []
+            min_occurrences: 1
+            min_duration_sec: 5.0
+
+      # Stage 1: does not rinse mouth by oneself — no oral care evidence at all.
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  grooming:
+    r4_label: "Grooming"
+    stages:
+      5:
+        description: "Cuts own fingernails and toenails"
+        not_assessable: true
+        note: "Nail cutting not included in standard controlled ADL protocol."
+        checks: []
+
+      4:
+        description: "Shaving, skin care, and/or hair styling"
+        checks:
+          - source: activity_hair_care
+            keywords: []
+            min_occurrences: 1
+            min_duration_sec: 10.0
+
+      3:
+        description: "Washes or wipes own face"
+        checks:
+          - source: activity_washing_face
+            keywords: []
+            min_occurrences: 1
+            min_duration_sec: 10.0
+
+      2:
+        description: "Washes own hands on a regular basis"
+        checks:
+          - source: activity_washing_hands
+            keywords: []
+            min_occurrences: 1
+            min_duration_sec: 10.0
+
+      # Stage 1: does not wash hands by oneself — no grooming evidence at all.

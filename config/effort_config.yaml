@@ -1,0 +1,136 @@
+# Effort / Performance Scorer Configuration
+#
+# Scores how much physiological effort a subject expends per domain relative
+# to the healthy-control (HC) reference population.
+#
+# Scoring method
+# --------------
+# 1. Build a per-activity reference profile from all HC windows:
+#    for every numeric feature, compute robust_center (median) and
+#    robust_scale (MAD = median absolute deviation).
+# 2. For each subject window of a given activity, compute the
+#    per-feature MAD-normalised absolute deviation:
+#      dev_f = |window[f] - hc_median[f]| / (hc_mad[f] + epsilon)
+#    then aggregate across features with a configurable reducer.
+# 3. Aggregate per-window deviations across all windows for an activity
+#    (and across activities within a domain) using the window reducer.
+# 4. Normalise to a centered -100..+100 scale:
+#    - anchor -100 = HC p(100-normalization_p100)
+#    - anchor 0    = median of HC subject-level deviations (healthy reference)
+#    - anchor +100 = HC normalization_p100 percentile
+#    - Scores are clipped to [-100, +100]
+#
+# feature_reducer  : "median" | "mean" | "trimmed_mean" | "iqr_mean" | "huber"
+#                    — how to collapse per-feature deviations into one per-window scalar.
+# window_reducer   : "median" | "mean" | "trimmed_mean" | "iqr_mean" | "huber"
+#                    — how to collapse per-window scalars into one subject-activity score.
+# min_windows      : minimum number of valid windows required to produce a score;
+#                    subjects below this threshold get NaN and a warning.
+# normalization_p100: upper percentile of HC subject scores used as the +100
+#                    anchor; default 95 means HC p95 maps to +100 and HC p5 to -100.
+# epsilon          : small constant added to MAD to avoid division by zero.
+# exclude_features : feature column names to always exclude (in addition to
+#                    automatic exclusion of metadata columns).
+# augment_with_statistics: when true, append per-activity feature statistics
+#                    (min/max/mean/std) as additional derived features.
+# statistical_transforms: statistics to append for every base feature when
+#                    augmentation is enabled.
+
+scoring:
+  feature_reducer: "median" # mean, trimmed_mean, iqr_mean, huber
+  window_reducer: "median" # trimmed_mean
+  min_windows: 3
+  normalization_p100: 95
+  epsilon: 1.0e-6
+  augment_with_statistics: false
+  statistical_transforms:
+    - min
+    - max
+    - mean
+    - std
+  exclude_features:
+    - activity_idx
+    - activity_name
+    - t_start
+    - t_end
+    - duration_sec
+    - mean_rr_ms      # redundant with mean_hr; keep one
+    - n_beats         # count variable, not a physiological effort feature
+
+  # Modality groups: features are assigned to a modality if their column name
+  # starts with any of the listed prefixes.  A feature can only belong to one
+  # modality (first match wins, in list order below).
+  modality_groups:
+    hr_hrv:
+      - "mean_hr"
+      - "rmssd"
+      - "sdnn"
+      - "stress_index"
+      - "HR_"
+      - "HRV_"
+    eda:
+      - "EDA_"
+    imu_wrist:
+      - "imu_corsano_wrist_acc_"
+    imu_bioz:
+      - "imu_corsano_bioz_acc_"
+    imu_chest:
+      - "imu_vivalnk_vv330_acceleration_"
+
+  # Inverse feature patterns: features where lower values indicate higher effort.
+  # For these features, deviation is computed as (hc_median - value) instead of
+  # (value - hc_median), since higher HRV/lower stress indicates better recovery
+  # and less physiological strain.
+  inverse_feature_patterns:
+    - "rmssd"
+    - "sdnn"
+    - "stress_index"
+
+# Domain → activity file mapping
+# Each activity name maps to the file prefix used by HR-metric-extractor:
+#   propulsion       → propulsion_hr_metrics.csv
+#   activity_<name>  → activity_<name>_hr_metrics.csv
+#
+# Weights within a domain (optional): if omitted, all activities are equally
+# weighted when aggregating to the domain score.
+
+domains:
+  basic_mobility:
+    r4_label: "Basic Movements"
+    activities:
+      standing:
+        file: activity_standing_hr_metrics.csv
+        weight: 1.0
+      transfer:
+        file: activity_transfer_hr_metrics.csv
+        weight: 1.0
+      bed_transfer:
+        file: activity_bed_transfer_hr_metrics.csv
+        weight: 1.0
+
+  walking:
+    r4_label: "Walking"
+    activities:
+      propulsion:
+        file: propulsion_hr_metrics.csv
+        weight: 1.0
+
+  oral_care:
+    r4_label: "Oral Care"
+    activities:
+      dental_care:
+        file: activity_dental_care_hr_metrics.csv
+        weight: 1.0
+
+  grooming:
+    r4_label: "Grooming"
+    activities:
+      hair_care:
+        file: activity_hair_care_hr_metrics.csv
+        weight: 1.5    # directly maps to R4 stage 4 (higher-level ADL)
+      washing_face:
+        file: activity_washing_face_hr_metrics.csv
+        weight: 1.0
+      washing_hands:
+        file: activity_washing_hands_hr_metrics.csv
+        weight: 0.75   # lowest-level grooming ADL

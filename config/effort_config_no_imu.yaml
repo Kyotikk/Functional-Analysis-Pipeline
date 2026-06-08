@@ -1,0 +1,81 @@
+# Effort / Performance Scorer Configuration (NO IMU)
+#
+# This config is a copy of the main effort_config.yaml, but with all IMU modalities excluded.
+# Use for strict no-IMU simulation reruns.
+
+scoring:
+  feature_reducer: "median"
+  window_reducer: "median"
+  min_windows: 3
+  normalization_p100: 99
+  epsilon: 1.0e-6
+  exclude_features:
+    - activity_idx
+    - activity_name
+    - t_start
+    - t_end
+    - duration_sec
+    - mean_rr_ms
+    - n_beats
+    # IMU features (exclude all)
+    - imu_corsano_wrist_acc_
+    - imu_corsano_bioz_acc_
+    - imu_vivalnk_vv330_acceleration_
+
+  modality_groups:
+    hr_hrv:
+      - "mean_hr"
+      - "rmssd"
+      - "sdnn"
+      - "stress_index"
+      - "HR_"
+      - "HRV_"
+    eda:
+      - "EDA_"
+    # IMU modalities removed
+
+  inverse_feature_patterns:
+    - "rmssd"
+    - "sdnn"
+    - "stress_index"
+
+domains:
+  basic_mobility:
+    r4_label: "Basic Movements"
+    activities:
+      standing:
+        file: activity_standing_hr_metrics.csv
+        weight: 1.0
+      transfer:
+        file: activity_transfer_hr_metrics.csv
+        weight: 1.0
+      bed_transfer:
+        file: activity_bed_transfer_hr_metrics.csv
+        weight: 1.0
+
+  walking:
+    r4_label: "Walking"
+    activities:
+      propulsion:
+        file: propulsion_hr_metrics.csv
+        weight: 1.0
+
+  oral_care:
+    r4_label: "Oral Care"
+    activities:
+      dental_care:
+        file: activity_dental_care_hr_metrics.csv
+        weight: 1.0
+
+  grooming:
+    r4_label: "Grooming"
+    activities:
+      hair_care:
+        file: activity_hair_care_hr_metrics.csv
+        weight: 1.5
+      washing_face:
+        file: activity_washing_face_hr_metrics.csv
+        weight: 1.0
+      washing_hands:
+        file: activity_washing_hands_hr_metrics.csv
+        weight: 0.75
